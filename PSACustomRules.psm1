@@ -107,9 +107,9 @@ function AvoidUsingPipeOutNull
             Avoid using (| Out-Null) for better performance. 
             Instead prefix the line with ([void]) or modify the function to not output anything. 
         .EXAMPLE
-            AvoidUsingPipeOutNull -Token $Token
+            AvoidUsingPipeOutNull -ScriptBlockAst $ScriptBlockAst
         .INPUTS
-            [System.Management.Automation.Language.Token[]]
+            [System.Management.Automation.Language.ScriptBlockAst]
         .OUTPUTS
             [Microsoft.Windows.Powershell.ScriptAnalyzer.Generic.DiagnosticRecord[]]
     #>
@@ -118,24 +118,36 @@ function AvoidUsingPipeOutNull
     param (
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
-        [System.Management.Automation.Language.Token[]]
-        $Token
+        [System.Management.Automation.Language.ScriptBlockAst]
+        $ScriptBlockAst
     )
 
     process 
     {
         try
         {
-            foreach ($tokenItem in $Token) 
+            [ScriptBlock]$predicate = {
+                param ([System.Management.Automation.Language.Ast]$Ast)
+
+                if ($Ast -is [System.Management.Automation.Language.PipelineAst])
+                {
+                    $true
+                }
+            }
+
+            [System.Management.Automation.Language.Ast[]]$pipelineAsts = $ScriptBlockAst.FindAll($predicate, $true)
+
+            foreach ($pipelineAst in $pipelineAsts) 
             {
-                if ($tokenItem.Text -like "*|*Out-Null*") 
+                if ($pipelineAst.Extent.Text -like "*|*Out-Null*") 
                 {
                     $objectSplat = @{
                         TypeName = "Microsoft.Windows.PowerShell.ScriptAnalyzer.Generic.DiagnosticRecord"
                         ArgumentList = "$((Get-Help $MyInvocation.MyCommand.Name).Description.Text)",
-                            $tokenItem.Extent,$PSCmdlet.MyInvocation.InvocationName,
+                            $pipelineAst.Extent,
+                            $PSCmdlet.MyInvocation.InvocationName,
                             'Warning',
-                            $Null
+                            $null
                     }
                     New-Object @objectSplat
                 }
